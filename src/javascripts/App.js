@@ -13,7 +13,7 @@ class App extends Component {
 
     focus = true;
 
-    componentDidMount = () => {
+    componentDidUpdate = () => {
 
         var url = 'https://api.github.com/repos/loopDelicious/front2/issues';
 
@@ -82,7 +82,6 @@ class App extends Component {
                 <li className="listed-issues"><a href={issue.html_url} target="_blank">Issue
                     #{issue.number} {issue.title} </a></li>
             )
-
         });
 
         return (
