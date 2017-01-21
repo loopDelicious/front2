@@ -13,6 +13,7 @@ class App extends Component {
 
     focus = true;
 
+    // display a list of github issues
     componentDidUpdate = () => {
 
         var url = 'https://api.github.com/repos/loopDelicious/front2/issues';
@@ -34,12 +35,14 @@ class App extends Component {
         });
     };
 
+    // display form to add a new github issue
     showForm = () => {
         this.setState({
             new: true
         });
     };
 
+    // POST request to create a new github issue
     handleForm = (e) => {
         e.preventDefault();
 
