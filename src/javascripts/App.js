@@ -14,12 +14,13 @@ class App extends Component {
         assignees: [],
         labels: ['bug', 'duplicate', 'enhancement', 'help wanted', 'invalid', 'question', 'wont fix'],
         console: 'initial load',
+        repos: [],
+        owner: '',
     };
 
     focus = true;
     url = 'https://api.github.com/';
 
-    // display a list of github issues
     componentDidMount = () => {
 
         this.setState({
@@ -35,51 +36,52 @@ class App extends Component {
                 console: 'no_conversation loaded',
             });
         });
+        // TODO:  TEMP hard code
+        // window.Front.on('conversation', (data) => {
+        //     // triggered when a conversation is loaded
+        //     // return data.contact.id;
+        //     // var user = data.contact.handle;
+        //
+        //     this.setState({
+        //         // console: data.contact.handle,
+        //         console: 'conversation loaded',
+        //     });
+        //
+        //     window.Front.alert({
+        //         title: 'Conversation was loaded',
+        //         message: 'Body of the alert.',
+        //         okTitle: 'Label of the OK button (optional)'
+        //     }, function () {
+        //         console.log('User clicked OK.');
+        //     });
+    };
 
-        window.Front.on('conversation', (data) => {
-            // triggered when a conversation is loaded
-            // return data.contact.id;
-            // var user = data.contact.handle;
+    getIssues = () => {
+        // GET /user/issues returns all issues ASSIGNED to user
+        var github_url = this.url + 'issues';
+        var payload = {
+            "filter": "all",
+            "state": "all",
+        };
 
-            this.setState({
-                // console: data.contact.handle,
-                console: 'conversation loaded',
-            });
+        $.ajax({
+            url: github_url,
+            type: 'get',
+            data: payload,
+            headers: {
+                Authorization: 'token ' + this.refs.token.value,
+            },
+            contentType: 'application/json',
+            success: (response) => {
 
-            window.Front.alert({
-                title: 'Conversation was loaded',
-                message: 'Body of the alert.',
-                okTitle: 'Label of the OK button (optional)'
-            }, function () {
-                console.log('User clicked OK.');
-            });
-
-            // GET /user/issues returns all issues ASSIGNED to user
-            // var github_url = this.url + 'issues';
-            // // var url = 'https://api.github.com/repos/loopDelicious/front2/issues';
-            // var payload = {
-            //     "filter": "created",
-            // };
-            //
-            // $.ajax({
-            //     url: github_url,
-            //     type: 'get',
-            //     // body: payload,
-            //     headers: {
-            //         Authorization: 'token ' + key.githubToken,
-            //     },
-            //     contentType: 'application/json',
-            //     success: (response) => {
-            //
-            //         var issues = [];
-            //         response.forEach( (issue) => {
-            //             issues.push(issue);
-            //         });
-            //         this.setState({
-            //             issues: issues,
-            //         });
-            //     }
-            // });
+                var issues = [];
+                response.forEach( (issue) => {
+                    issues.push(issue);
+                });
+                this.setState({
+                    issues: issues,
+                });
+            }
         });
     };
 
@@ -88,6 +90,28 @@ class App extends Component {
         this.setState({
             new: true
         });
+
+        // GET /user/repos
+        var github_url = this.url + 'user/repos';
+
+        $.ajax({
+            url: github_url,
+            type: 'get',
+            headers: {
+                Authorization: 'token ' + this.refs.token.value,
+            },
+            contentType: 'application/json',
+            success: (response) => {
+                var repos = response.map( (repo) => {
+                    return repo.name;
+                });
+                this.setState({
+                    repos: repos,
+                    owner: response.owner ? response.owner.login : 'loopDelicious',
+                });
+            }
+        });
+
     };
 
     // POST request to create a new github issue
@@ -97,28 +121,31 @@ class App extends Component {
         var title = this.refs['title'].value;
         var body = this.refs['body'].value;
         var label = this.refs['labels'].value;
+        var repo = this.refs['repos'].value;
 
-        if (title && body) {
-            var url = 'https://api.github.com/repos/loopDelicious/front2/issues';
+        if (title && body && repo && label) {
+            var github_url = this.url + 'repos/' + this.state.owner + '/' + repo + '/issues';
             var data = {
                 "title": title,
                 "body": body,
-                "labels": label
+                "labels": [label],
             };
 
             $.ajax({
-                url: url,
+                url: github_url,
                 type: 'post',
-                body: JSON.stringify(data),
+                data: JSON.stringify(data),
                 headers: {
-                    Authorization: 'token ' + key.githubToken,
+                    Authorization: 'token ' + this.refs.token.value,
                 },
                 contentType: 'application/json',
                 success: (response) => {
                     console.log(response);
                     this.refs['user_form'].reset();
+                    this.state.issues.unshift(response);
                     this.setState({
                         assignees: [],
+                        issues: this.state.issues,
                     });
                 }
             });
@@ -130,89 +157,81 @@ class App extends Component {
         }
     };
 
-    handleClose = (issue) => {
+    handleToggle = (issue) => {
 
-        var url = 'https://api.github.com/repos/loopDelicious/front2/issues/' + issue.number;
+        var github_url = issue.repository.url + '/issues/' + issue.number;
+
         var data = {
-            state: 'close',
+            state: issue.state === 'open' ? 'closed' : 'open',
         };
 
         $.ajax({
-            url: url,
-            type: 'patch',
-            body: JSON.stringify(data),
+            url: github_url,
+            type: 'PATCH',
+            data: JSON.stringify(data),
             headers: {
-                Authorization: 'token ' + key.githubToken,
+                Authorization: 'token ' + this.refs.token.value,
             },
             contentType: 'application/json',
             success: (response) => {
-                console.log(response);
-                // this.componentDidMount();
+
+                this.state.issues[this.getIssueIndex(response.number)].state = response.state;
+
+                this.setState({
+                    issues: this.state.issues,
+                });
             }
         });
     };
 
-    handleOpen = (issue) => {
-
-        var url = 'https://api.github.com/repos/loopDelicious/front2/issues/' + issue.number;
-        var data = {
-            state: 'open',
-        };
-
-        $.ajax({
-            url: url,
-            type: 'patch',
-            body: JSON.stringify(data),
-            headers: {
-                Authorization: 'token ' + key.githubToken,
-            },
-            contentType: 'application/json',
-            success: (response) => {
-                console.log(response);
-                // this.componentDidMount();
-            }
+    getIssueIndex = (issueNumber) => {
+        var tempIssuesIndex = this.state.issues.map( (issue) => {
+            return issue.number;
         });
+
+        var index = tempIssuesIndex.indexOf(issueNumber);
+
+        return index;
+
     };
 
     listAssignees = (issue) => {
 
-        var url = 'https://api.github.com/repos/loopDelicious/front2/assignees';
+        var github_url = issue.repository.url + '/assignees';
 
         $.ajax({
-            url: url,
+            url: github_url,
             type: 'get',
             headers: {
-                Authorization: 'token ' + key.githubToken,
+                Authorization: 'token ' + this.refs.token.value,
             },
             contentType: 'application/json',
             success: (response) => {
-                console.log(response);
                 this.setState({
                     assignees: response,
-                })
+                });
             }
+
         });
     };
 
-    handleReassign = (issue, assignee) => {
+    handleReassign = (issue, e) => {
 
-        var url = 'https://api.github.com/repos/loopDelicious/front2/issues' + issue.number;
+        var github_url = issue.repository.url + '/issues/' + issue.number;
         var data = {
-            assignee: assignee,
+            assignee: e.target.value,
         };
 
         $.ajax({
-            url: url,
+            url: github_url,
             type: 'patch',
-            body: data,
+            data: JSON.stringify(data),
             headers: {
-                Authorization: 'token ' + key.githubToken,
+                Authorization: 'token ' + this.refs.token.value,
             },
             contentType: 'application/json',
             success: (response) => {
                 console.log(response);
-
-                // this.componentDidMount();
             }
         });
     };
@@ -222,19 +241,17 @@ class App extends Component {
         var issues = this.state.issues.map( (issue) => {
 
             var listItems = this.state.assignees.map( (person) => {
-                return <option key={person} >{person}</option>
+                return <option key={person.id} >{person.login}</option>
             });
 
             return (
-                <li className="listed-issues" key={issue.number}>
-                    <a href={issue.html_url} target="_blank">Issue #{issue.number} {issue.title} </a>
-                    {issue.state === 'open' ?
-                        <a href="#" className='edit-link' onClick={this.handleClose.bind(this, issue)}> Close </a>
-                        :
-                        <a href="#" className='edit-link' onClick={this.handleOpen.bind(this, issue)}>Open</a>
-                    }
+                <li className="listed-issues cf" key={issue.id}>
+                    #{issue.number} <a href={issue.html_url} target="_blank"> {issue.title} </a><br/>
+
+                    <button className={'btn ' + (issue.state === 'open' ? 'close-button' : 'open-button')} onClick={this.handleToggle.bind(this, issue)}>{ issue.state === 'open' ? 'Close' : 'Reopen' }</button>
+
                     <div className="dropdown">
-                        <select className="dropdown-content" ref='assignee' onChange={this.listAssignees}>
+                        <select className="dropdown-content" onClick={this.listAssignees.bind(this, issue)} onChange={this.handleReassign.bind(this, issue)}>
                             <option value="" disabled selected >{issue.assignee ? issue.assignee.login : 'Assign'}</option>
                             {listItems}
                         </select>
@@ -247,8 +264,14 @@ class App extends Component {
             return <option key={label} >{label}</option>
         });
 
+        var repositories = this.state.repos.map( (repo) => {
+            return <option key={repo} >{repo}</option>
+        });
+
         return (
             <div className="App">
+
+                <input type="text" placeholder="personal access token" ref="token" defaultValue={key.githubToken} onChange={this.getIssues} autoFocus={this.focus} /><br/>
 
                 <div>
                     <h4>Current issues</h4>
@@ -256,26 +279,29 @@ class App extends Component {
                     <ul id="github-issues">
                         {issues ? issues : <br/>}
                         <button id='add-button' onClick={this.showForm}><i className="fa fa-plus" /></button>
+                        <h4>new issue</h4>
                     </ul>
 
                 </div>
 
                 {this.state.new ?
-                <form id="new-input" ref="user_form" onSubmit={this.handleForm} >
-                    <h4>Create a new issue</h4>
-                    <input type="text" placeholder="Issue title" ref="title" autoFocus={this.focus} /><br/>
+                <form id="new-input" className='cf' ref="user_form" onSubmit={this.handleForm} >
+                    <input type="text" placeholder="Issue title" ref="title" /><br/>
                     <input type="text" placeholder="Issue body" ref="body" /><br/>
                     <div className="dropdown">
                         <select className="dropdown-content" ref='labels' >
                             <option value="" disabled selected >Labels</option>
                             {labels}
                         </select>
+                        <select className="dropdown-content" ref='repos' >
+                            <option value="" disabled selected >Repos</option>
+                            {repositories}
+                        </select>
                     </div>
                     {this.state.error ? <div><span>{this.state.error}</span><br/></div> : null}
                     <button id="new-issue" type='submit' >Add to GitHub</button>
                 </form>
                     : null }
-                <span>{this.state.console}</span>
             </div>
         );
     }
