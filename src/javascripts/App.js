@@ -10,6 +10,7 @@ class App extends Component {
     state = {
         issues: [],
         error: null,
+        contact: '',
         new: false,
         assignees: [],
         labels: ['bug', 'duplicate', 'enhancement', 'help wanted', 'invalid', 'question', 'wont fix'],
@@ -19,51 +20,47 @@ class App extends Component {
     };
 
     focus = true;
+
     url = 'https://api.github.com/';
 
     componentDidMount = () => {
 
-        this.setState({
-            // console: data.contact.handle,
-            console: 'react component mounted'
-        });
+        window.Front.on('conversation', (data) => {
+            // triggered when a conversation is loaded, returns contact object
+            var email = data.contact.handle;
+            var github_url = this.url + 'search/users';
+            var payload = {
+                "q": email,
+            };
 
-
-        window.Front.on('no_conversation', () => {
-
-            this.setState({
-                // console: data.contact.handle,
-                console: 'no_conversation loaded',
+            // query Github username from email
+            $.ajax({
+                url: github_url,
+                type: 'get',
+                data: payload,
+                headers: {
+                    Authorization: 'token ' + this.refs.token.value,
+                },
+                contentType: 'application/json',
+                success: (response) => {
+                    this.setState({
+                        contact: (response.items.length > 0 ? response.items[0].login : '')
+                    });
+                    this.getIssues();
+                }
             });
         });
-        // TODO:  TEMP hard code
-        // window.Front.on('conversation', (data) => {
-        //     // triggered when a conversation is loaded
-        //     // return data.contact.id;
-        //     // var user = data.contact.handle;
-        //
-        //     this.setState({
-        //         // console: data.contact.handle,
-        //         console: 'conversation loaded',
-        //     });
-        //
-        //     window.Front.alert({
-        //         title: 'Conversation was loaded',
-        //         message: 'Body of the alert.',
-        //         okTitle: 'Label of the OK button (optional)'
-        //     }, function () {
-        //         console.log('User clicked OK.');
-        //     });
     };
 
     getIssues = () => {
-        // GET /user/issues returns all issues ASSIGNED to user
+
         var github_url = this.url + 'issues';
         var payload = {
             "filter": "all",
             "state": "all",
         };
 
+        // GET returns all issues associated to authenticated user, then filters for created by contact
         $.ajax({
             url: github_url,
             type: 'get',
@@ -73,11 +70,15 @@ class App extends Component {
             },
             contentType: 'application/json',
             success: (response) => {
-
                 var issues = [];
-                response.forEach( (issue) => {
-                    issues.push(issue);
-                });
+                console.log('response ', response);
+                if (response.length > 0 && this.state.contact) {
+                    response.forEach( (issue) => {
+                        if (issue.user? (issue.user.login === this.state.contact): null) {
+                            issues.push(issue);
+                        }
+                    })
+                }
                 this.setState({
                     issues: issues,
                 });
@@ -91,7 +92,6 @@ class App extends Component {
             new: true
         });
 
-        // GET /user/repos
         var github_url = this.url + 'user/repos';
 
         $.ajax({
@@ -111,7 +111,6 @@ class App extends Component {
                 });
             }
         });
-
     };
 
     // POST request to create a new github issue
@@ -149,8 +148,8 @@ class App extends Component {
                     });
                 }
             });
-        } else {
 
+        } else {
             this.setState({
                 error: 'Please enter Issue details.'
             });
@@ -185,6 +184,7 @@ class App extends Component {
     };
 
     getIssueIndex = (issueNumber) => {
+
         var tempIssuesIndex = this.state.issues.map( (issue) => {
             return issue.number;
         });
@@ -211,7 +211,6 @@ class App extends Component {
                     assignees: response,
                 });
             }
-
         });
     };
 
@@ -309,14 +308,4 @@ class App extends Component {
 
 export default App;
 
-// var url = 'https://github.com/login/oauth/authorize';
-// window.Front.openUrl(url);
-//
-// Front.on('conversation', function(data) {
-//     console.log('Conversation', data.conversation);
-//     console.log('Contact', data.contact);
-//     console.log('Message', data.message);
-//     console.log('OtherMessages', data.otherMessages);
-//     conversation = data.conversation;
-// });
 
