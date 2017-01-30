@@ -2,13 +2,12 @@ import React, { Component } from 'react';
 import '../css/App.css';
 import $ from 'jquery';
 import key from '../../secrets.js';
-
-
+var parse = require('parse-link-header');
 
 class App extends Component {
 
     state = {
-        issues: [],
+        allIssues: [],
         error: null,
         contact: '',
         new: false,
@@ -20,96 +19,116 @@ class App extends Component {
     };
 
     focus = true;
-
     url = 'https://api.github.com/';
 
     componentDidMount = () => {
 
+        // get authenticated user's issues
+        var github_url = this.url + 'issues';
+        this.getIssues(github_url);
+
         window.Front.on('conversation', (data) => {
             // triggered when a conversation is loaded, returns contact object
-            var email = data.contact.handle;
-            var github_url = this.url + 'search/users';
-            var payload = {
-                "q": email,
-            };
-
-            // query Github username from email
-            $.ajax({
-                url: github_url,
-                type: 'get',
-                data: payload,
-                headers: {
-                    Authorization: 'token ' + this.refs.token.value,
-                },
-                contentType: 'application/json',
-                success: (response) => {
-                    this.setState({
-                        contact: (response.items.length > 0 ? response.items[0].login : '')
-                    });
-                    this.getIssues();
-                }
+            this.setState({
+                contact: data.contact.display_name
             });
+
+            // instead of querying github by email (requires user's email to be public),
+            // return all of authenticated user's issues and filter by contact name
+            // var email = data.contact.handle;
+            // var payload = {
+            //     "q": email,
+            // };
+
+            // var github_url = this.url + 'search/users';
+            //
+            // $.ajax({
+            //     url: github_url,
+            //     type: 'get',
+            //     // data: payload,
+            //     headers: {
+            //         Authorization: 'token ' + this.refs.token.value,
+            //     },
+            //     contentType: 'application/json',
+            //     success: (response) => {
+            //         // instead of querying by issues with contact's public email, filter issues with contact name
+            //         this.setState({
+            //             contact: (response.items.length > 0 ? response.items[0].login : '')
+            //         });
+            //         this.getIssues();
+            //     }
+            // });
         });
     };
 
-    getIssues = () => {
+    getIssues = (url) => {
 
-        var github_url = this.url + 'issues';
         var payload = {
             "filter": "all",
             "state": "all",
         };
 
-        // GET returns all issues associated to authenticated user, then filters for created by contact
+        // GET returns all issues associated to authenticated user
         $.ajax({
-            url: github_url,
+            url: url,
             type: 'get',
             data: payload,
             headers: {
                 Authorization: 'token ' + this.refs.token.value,
             },
             contentType: 'application/json',
-            success: (response) => {
-                var issues = [];
-                console.log('response ', response);
-                if (response.length > 0 && this.state.contact) {
-                    response.forEach( (issue) => {
-                        if (issue.user? (issue.user.login === this.state.contact): null) {
-                            issues.push(issue);
-                        }
-                    })
+            success: function(response, status, xhr) {
+                console.log('all issues response ', response);
+                if (response.length > 0) {
+                    this.setState({
+                        allIssues: this.state.allIssues.concat(response)
+                    });
                 }
-                this.setState({
-                    issues: issues,
-                });
-            }
+                var pageUrls = parse(xhr.getResponseHeader("Link"));
+                if (pageUrls.next) {
+                    this.getIssues(pageUrls.next.url);
+                }
+            }.bind(this)
         });
     };
 
-    // display form to add a new github issue
     showForm = () => {
+        // display form to add a new github issue
         this.setState({
             new: true
         });
-
+        // get repos from github
         var github_url = this.url + 'user/repos';
+        this.getRepos(github_url);
+    };
+
+    getRepos = (url) => {
 
         $.ajax({
-            url: github_url,
+            url: url,
             type: 'get',
             headers: {
                 Authorization: 'token ' + this.refs.token.value,
             },
             contentType: 'application/json',
-            success: (response) => {
+            success: function(response, status, xhr) {
+
                 var repos = response.map( (repo) => {
                     return repo.name;
                 });
-                this.setState({
-                    repos: repos,
-                    owner: response.owner ? response.owner.login : 'loopDelicious',
+                var owner = response.map( (repo) => {
+                    return repo.owner.login;
                 });
-            }
+                this.setState({
+                    repos: this.state.repos.concat(repos),
+                    owner: owner,
+                });
+
+                var pageUrls = parse(xhr.getResponseHeader("Link"));
+                if (pageUrls.next) {
+                    this.getRepos(pageUrls.next.url);
+                }
+            }.bind(this)
         });
     };
 
@@ -139,7 +158,7 @@ class App extends Component {
                 },
                 contentType: 'application/json',
                 success: (response) => {
-                    console.log(response);
+                    // console.log('add new issue ', response);
                     this.refs['user_form'].reset();
                     this.state.issues.unshift(response);
                     this.setState({
@@ -237,7 +256,9 @@ class App extends Component {
 
     render() {
 
-        var issues = this.state.issues.map( (issue) => {
+        var issues = this.state.allIssues.filter( (issue) => {
+            return (JSON.stringify(issue).search(this.state.contact) !== -1)
+        }).map( (issue) => {
 
             var listItems = this.state.assignees.map( (person) => {
                 return <option key={person.id} >{person.login}</option>
@@ -250,8 +271,8 @@ class App extends Component {
                     <button className={'btn ' + (issue.state === 'open' ? 'close-button' : 'open-button')} onClick={this.handleToggle.bind(this, issue)}>{ issue.state === 'open' ? 'Close' : 'Reopen' }</button>
 
                     <div className="dropdown">
-                        <select className="dropdown-content" onClick={this.listAssignees.bind(this, issue)} onChange={this.handleReassign.bind(this, issue)}>
-                            <option value="" disabled selected >{issue.assignee ? issue.assignee.login : 'Assign'}</option>
+                        <select className="dropdown-content" onClick={this.listAssignees.bind(this, issue)} onChange={this.handleReassign.bind(this, issue)} defaultValue=''>
+                            <option value="" disabled >{issue.assignee ? issue.assignee.login : 'Assign'}</option>
                             {listItems}
                         </select>
                     </div>
@@ -288,12 +309,12 @@ class App extends Component {
                     <input type="text" placeholder="Issue title" ref="title" /><br/>
                     <input type="text" placeholder="Issue body" ref="body" /><br/>
                     <div className="dropdown">
-                        <select className="dropdown-content" ref='labels' >
-                            <option value="" disabled selected >Labels</option>
+                        <select className="dropdown-content" defaultValue='' ref='labels' >
+                            <option value="" disabled >Labels</option>
                             {labels}
                         </select>
-                        <select className="dropdown-content" ref='repos' >
-                            <option value="" disabled selected >Repos</option>
+                        <select className="dropdown-content" defaultValue='' ref='repos' >
+                            <option value='' disabled >Repos</option>
                             {repositories}
                         </select>
                     </div>
